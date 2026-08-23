@@ -18,11 +18,29 @@ class HudOverlayManager:
         self.overlay = overlay
         self._loader = bundle_loader
         self._event_bus = event_bus
+        self._event_bus.subscribe("*", self._on_bus_event)
         
         # bundle_id -> (WidgetInstance, Manifest, source_code)
         self._registered_bundles: dict[str, tuple[QWidget, HudWidgetManifest, str]] = {}
         # bundle_id -> True
         self._mounted_bundles: dict[str, bool] = {}
+
+    def _on_bus_event(self, event: HudEvent) -> None:
+        """Forward bus events to all mounted widgets."""
+        for bundle_id in list(self._mounted_bundles.keys()):
+            if bundle_id in self._registered_bundles:
+                widget_instance, _, _ = self._registered_bundles[bundle_id]
+                if hasattr(widget_instance, "on_event"):
+                    try:
+                        widget_instance.on_event(event.name, event.payload)
+                    except Exception:
+                        pass
+                elif event.name == "JARVIS_STATE_CHANGED" and hasattr(widget_instance, "set_state"):
+                    widget_instance.set_state(event.payload.get("state", "IDLE"))
+                elif event.name == "JARVIS_SUBTITLE_TOKEN" and hasattr(widget_instance, "append_subtitle_token"):
+                    widget_instance.append_subtitle_token(event.payload.get("token", ""))
+                elif event.name == "JARVIS_SUBTITLE_SET" and hasattr(widget_instance, "set_subtitle"):
+                    widget_instance.set_subtitle(event.payload.get("text", ""))
 
     def get_code(self, bundle_id: str) -> str | None:
         """Retrieve the source code of a registered widget."""

@@ -26,5 +26,7 @@ class HudEventBus:
     def publish(self, event: HudEvent) -> None:
         """Dispatch an event synchronously to all registered handlers."""
         handlers = list(self._handlers.get(event.name, []))
+        if "*" in self._handlers:
+            handlers.extend(self._handlers["*"])
         for handler in handlers:
             handler(event)

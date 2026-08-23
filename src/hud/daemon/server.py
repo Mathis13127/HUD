@@ -1,6 +1,5 @@
-"""TCP Server for IPC communication with the HUD Daemon."""
-
 import json
+import logging
 
 from PySide6.QtNetwork import QTcpServer, QHostAddress, QTcpSocket
 from PySide6.QtCore import QObject
@@ -8,6 +7,8 @@ from PySide6.QtCore import QObject
 from hud.overlay.manager import HudOverlayManager
 from hud.events.bus import HudEventBus
 from hud.events.types import HudEvent
+
+logger = logging.getLogger("hud.daemon.server")
 
 
 class HudTcpServer(QObject):
@@ -25,9 +26,9 @@ class HudTcpServer(QObject):
         self._server.newConnection.connect(self._on_new_connection)
         
         if not self._server.listen(QHostAddress(QHostAddress.SpecialAddress.LocalHost), port):
-            print(f"[HudTcpServer] FATAL: Could not bind to port {port}")
+            logger.critical("[HudTcpServer] FATAL: Could not bind to port %s", port)
         else:
-            print(f"[HudTcpServer] Listening for IPC commands on 127.0.0.1:{port}")
+            logger.info("[HudTcpServer] Listening for IPC commands on 127.0.0.1:%s", port)
 
     def _on_new_connection(self) -> None:
         socket = self._server.nextPendingConnection()
@@ -40,11 +41,11 @@ class HudTcpServer(QObject):
         """Handle auto-cleanup when a client disconnects/crashes."""
         widgets_to_cleanup = self._socket_widgets.pop(socket, set())
         for bundle_id in widgets_to_cleanup:
-            print(f"[HudTcpServer] Auto-cleaning widget {bundle_id} due to client disconnect.")
+            logger.info("[HudTcpServer] Auto-cleaning widget %s due to client disconnect.", bundle_id)
             try:
                 self._manager.unregister(bundle_id)
             except Exception as e:
-                print(f"[HudTcpServer] Error auto-cleaning {bundle_id}: {e}")
+                logger.error("[HudTcpServer] Error auto-cleaning %s: %s", bundle_id, e)
                 
         socket.deleteLater()
 
