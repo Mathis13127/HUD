@@ -1,7 +1,6 @@
 """TCP Server for IPC communication with the HUD Daemon."""
 
 import json
-from pathlib import Path
 
 from PySide6.QtNetwork import QTcpServer, QHostAddress, QTcpSocket
 from PySide6.QtCore import QObject
@@ -19,6 +18,9 @@ class HudTcpServer(QObject):
         self._manager = manager
         self._event_bus = event_bus
         
+        # Track which sockets own which widgets for auto-cleanup on disconnect
+        self._socket_widgets: dict[QTcpSocket, set[str]] = {}
+        
         self._server = QTcpServer(self)
         self._server.newConnection.connect(self._on_new_connection)
         
@@ -29,8 +31,22 @@ class HudTcpServer(QObject):
 
     def _on_new_connection(self) -> None:
         socket = self._server.nextPendingConnection()
+        self._socket_widgets[socket] = set()
+        
         socket.readyRead.connect(lambda: self._on_ready_read(socket))
-        socket.disconnected.connect(socket.deleteLater)
+        socket.disconnected.connect(lambda: self._on_disconnect(socket))
+
+    def _on_disconnect(self, socket: QTcpSocket) -> None:
+        """Handle auto-cleanup when a client disconnects/crashes."""
+        widgets_to_cleanup = self._socket_widgets.pop(socket, set())
+        for bundle_id in widgets_to_cleanup:
+            print(f"[HudTcpServer] Auto-cleaning widget {bundle_id} due to client disconnect.")
+            try:
+                self._manager.unregister(bundle_id)
+            except Exception as e:
+                print(f"[HudTcpServer] Error auto-cleaning {bundle_id}: {e}")
+                
+        socket.deleteLater()
 
     def _on_ready_read(self, socket: QTcpSocket) -> None:
         while socket.canReadLine():
@@ -40,24 +56,20 @@ class HudTcpServer(QObject):
                 
             try:
                 payload = json.loads(line)
-                response = self._handle_command(payload)
+                response = self._handle_command(payload, socket)
                 socket.write((json.dumps(response) + "\n").encode("utf-8"))
             except json.JSONDecodeError:
                 socket.write(b'{"status": "error", "reason": "Invalid JSON"}\n')
             except Exception as e:
                 socket.write((json.dumps({"status": "error", "reason": str(e)}) + "\n").encode("utf-8"))
 
-    def _handle_command(self, payload: dict) -> dict:
+    def _handle_command(self, payload: dict, socket: QTcpSocket) -> dict:
         action = payload.get("action")
         
-        if action == "register":
-            path = Path(payload.get("path", ""))
-            bundle_id = self._manager.register(path)
-            return {"status": "ok", "bundle_id": bundle_id}
-            
-        elif action == "register_code":
+        if action == "register_code":
             code = payload.get("code", "")
             bundle_id = self._manager.register_code(code)
+            self._socket_widgets[socket].add(bundle_id)
             return {"status": "ok", "bundle_id": bundle_id}
             
         elif action == "mount":

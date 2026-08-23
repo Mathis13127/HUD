@@ -124,3 +124,19 @@ class WidgetPlacementError(HudError):
             code="hud.overlay.invalid_anchor",
             details={"anchor": anchor},
         )
+
+class WidgetAlreadyMountedError(HudError):
+    def __init__(self, bundle_id: str) -> None:
+        super().__init__(
+            message=f"Widget '{bundle_id}' is already mounted.",
+            code="hud.overlay.already_mounted",
+            details={"bundle_id": bundle_id}
+        )
+
+class WidgetNotRegisteredError(HudError):
+    def __init__(self, bundle_id: str) -> None:
+        super().__init__(
+            message=f"Widget '{bundle_id}' is not registered.",
+            code="hud.overlay.not_registered",
+            details={"bundle_id": bundle_id}
+        )

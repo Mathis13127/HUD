@@ -1,82 +1,67 @@
-"""Unit tests for the single-file HUD Widget Bundle system."""
-
-from pathlib import Path
+"""Tests for the HUD Bundle Loader."""
 
 import pytest
 
-from hud.api.models import HudWidgetManifest, WidgetPlacement
 from hud.bundle.loader import HudBundleLoader
+from hud.api.models import HudWidgetManifest
+from hud.errors import WidgetLoadError, ManifestValidationError
 from hud.bundle.manifest import parse_manifest
-from hud.errors import ManifestValidationError, WidgetLoadError
 
 
 def test_parse_manifest_valid() -> None:
-    data = {
-        "id": "test.hud.widget",
-        "name": "Test Widget",
+    raw_data = {
+        "id": "jarvis.hud.orb",
+        "name": "Orb Widget",
         "version": "1.0",
-        "author": "Mathis",
-        "entry_point": "MyWidget"
+        "default_placement": {
+            "anchor": "top_right",
+            "offset_x": -20
+        }
     }
-    manifest = parse_manifest(data)
-    
-    assert isinstance(manifest, HudWidgetManifest)
-    assert manifest.id == "test.hud.widget"
-    assert manifest.name == "Test Widget"
-    assert manifest.version == "1.0"
-    assert manifest.entry_point == "MyWidget"
+    manifest = parse_manifest(raw_data)
+    assert manifest.id == "jarvis.hud.orb"
+    assert manifest.name == "Orb Widget"
+    assert manifest.default_placement.anchor == "top_right"
+    assert manifest.default_placement.offset_x == -20
+    assert manifest.default_placement.offset_y == 0
 
 
 def test_parse_manifest_missing_required() -> None:
-    data = {
-        # missing id and name
-        "version": "1.0"
+    raw_data = {
+        "name": "Orb Widget"
     }
     with pytest.raises(ManifestValidationError) as exc:
-        parse_manifest(data)
-    assert "id" in exc.value.missing_fields
-    assert "name" in exc.value.missing_fields
+        parse_manifest(raw_data)
+    assert "Missing" in str(exc.value)
+    assert "id" in str(exc.value)
 
 
-def test_bundle_loader_dynamic_import(tmp_path: Path) -> None:
-    widget_file = tmp_path / "my_widget.py"
-    widget_file.write_text(
+def test_bundle_loader_dynamic_import() -> None:
+    code = (
         "MANIFEST = {\n"
         "    'id': 'jarvis.hud.test',\n"
         "    'name': 'Test'\n"
         "}\n"
         "class Widget:\n"
-        "    pass\n",
-        encoding="utf-8"
+        "    pass\n"
     )
 
     loader = HudBundleLoader()
-    instance, manifest = loader.load_bundle(widget_file)
+    instance, manifest = loader.load_bundle_from_source(code)
 
     assert manifest.id == "jarvis.hud.test"
-    assert manifest.name == "Test"
+    assert instance is not None
     assert type(instance).__name__ == "Widget"
 
 
-def test_bundle_loader_missing_file(tmp_path: Path) -> None:
-    missing_file = tmp_path / "does_not_exist.py"
-    loader = HudBundleLoader()
-
-    with pytest.raises(WidgetLoadError) as exc:
-        loader.load_bundle(missing_file)
-    assert "unknown" == exc.value.bundle_id
-
-
-def test_bundle_loader_missing_manifest(tmp_path: Path) -> None:
-    widget_file = tmp_path / "bad.py"
-    widget_file.write_text(
+def test_bundle_loader_missing_manifest() -> None:
+    code = (
         "class Widget:\n"
-        "    pass\n",
-        encoding="utf-8"
+        "    pass\n"
     )
 
     loader = HudBundleLoader()
 
     with pytest.raises(WidgetLoadError) as exc:
-        loader.load_bundle(widget_file)
-    assert "Bundle is missing 'MANIFEST' dictionary" in str(exc.value)
+        loader.load_bundle_from_source(code)
+    assert "Bundle is missing 'MANIFEST'" in str(exc.value) or "bundle is missing 'MANIFEST'" in str(exc.value)

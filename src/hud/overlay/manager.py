@@ -1,64 +1,28 @@
-"""Integration manager bridging the Bundle Loader and the Overlay Window."""
-
-from pathlib import Path
+"""Overlay Manager to handle widget lifecycles on the screen."""
 
 from PySide6.QtWidgets import QWidget
+from typing import Any
 
+from hud.api.models import HudWidgetManifest
 from hud.bundle.loader import HudBundleLoader
-from hud.errors import WidgetTypeError
+from hud.errors import WidgetAlreadyMountedError, WidgetNotRegisteredError, WidgetTypeError
 from hud.events.bus import HudEventBus
-from hud.events.definitions import HUD_BUNDLE_MOUNTED, HUD_BUNDLE_UNMOUNTED, HUD_WIDGET_ERROR
-from hud.events.types import HudEvent
 from hud.overlay.engine import HudOverlayWindow
 from hud.overlay.layout import calculate_absolute_position
 
 
 class HudOverlayManager:
-    """Manages the lifecycle of dynamic widgets on the PySide6 overlay."""
+    """Manages the registration and mounting of widgets onto the Overlay."""
 
-    def __init__(
-        self,
-        overlay: HudOverlayWindow,
-        bundle_loader: HudBundleLoader,
-        event_bus: HudEventBus,
-    ) -> None:
-        self._overlay = overlay
+    def __init__(self, overlay: HudOverlayWindow, bundle_loader: HudBundleLoader, event_bus: HudEventBus) -> None:
+        self.overlay = overlay
         self._loader = bundle_loader
         self._event_bus = event_bus
-        self._registered_bundles: dict[str, tuple[QWidget, Any]] = {}
-
-    def get_registered(self) -> list[str]:
-        """Return a list of all registered bundle IDs."""
-        return list(self._registered_bundles.keys())
-
-    def get_mounted(self) -> list[str]:
-        """Return a list of all currently mounted bundle IDs."""
-        return list(self._overlay._mounted_widgets.keys())
-
-    def register(self, file_path: Path) -> str:
-        """Parse and load a widget into memory without mounting it.
-
-        Args:
-            file_path: Absolute path to the .py widget file.
-
-        Returns:
-            The loaded bundle ID.
-            
-        Raises:
-            WidgetLoadError: If loading fails.
-            WidgetTypeError: If the bundle does not export a QWidget.
-            ManifestValidationError: If the manifest is invalid.
-        """
-        widget_instance, manifest = self._loader.load_bundle(file_path)
-
-        if not isinstance(widget_instance, QWidget):
-            raise WidgetTypeError(
-                bundle_id=manifest.id,
-                found_type=type(widget_instance).__name__
-            )
-
-        self._registered_bundles[manifest.id] = (widget_instance, manifest)
-        return manifest.id
+        
+        # bundle_id -> (WidgetInstance, Manifest)
+        self._registered_bundles: dict[str, tuple[QWidget, HudWidgetManifest]] = {}
+        # bundle_id -> True
+        self._mounted_bundles: dict[str, bool] = {}
 
     def register_code(self, source_code: str) -> str:
         """Parse and load a widget into memory from raw source code (In-Memory).
@@ -86,68 +50,57 @@ class HudOverlayManager:
         self._registered_bundles[manifest.id] = (widget_instance, manifest)
         return manifest.id
 
-    def mount(self, bundle_id: str) -> None:
-        """Mount a registered widget to the overlay.
+    def unregister(self, bundle_id: str) -> None:
+        """Remove a widget completely from memory. If mounted, it unmounts it first."""
+        if bundle_id in self._registered_bundles:
+            self.unmount(bundle_id)
+            del self._registered_bundles[bundle_id]
 
-        Args:
-            bundle_id: The ID of the registered widget to mount.
-            
-        Raises:
-            WidgetLoadError: If the bundle is not registered.
-            WidgetPlacementError: If the default placement anchor is invalid.
-        """
+    def mount(self, bundle_id: str) -> None:
+        """Mount a registered widget to the overlay."""
         if bundle_id not in self._registered_bundles:
-            raise WidgetLoadError(bundle_id=bundle_id, reason="Widget not registered.")
+            raise WidgetNotRegisteredError(bundle_id)
+            
+        if bundle_id in self._mounted_bundles:
+            raise WidgetAlreadyMountedError(bundle_id)
             
         widget_instance, manifest = self._registered_bundles[bundle_id]
         
-        if bundle_id in self._overlay._mounted_widgets:
-            return  # Already mounted
+        if hasattr(widget_instance, "mount"):
+            widget_instance.mount()
 
-        # Handle optional placement gracefully
-        placement = manifest.default_placement
-        if not placement:
-            # Fallback to center if not specified
-            from hud.api.models import WidgetPlacement
-            placement = WidgetPlacement(anchor="center")
-
-        # Mount to Qt Window
-        self._overlay.mount_widget(
-            widget=widget_instance,
-            placement=placement,
-            bundle_id=manifest.id
+        widget_instance.setParent(self.overlay)
+        pos_tuple = calculate_absolute_position(
+            manifest.default_placement,
+            widget_instance.width(),
+            widget_instance.height(),
+            self.overlay.width(),
+            self.overlay.height()
         )
-
-        # Trigger internal protocol hook if present
-        if hasattr(widget_instance, "mount") and callable(widget_instance.mount):
-            try:
-                widget_instance.mount()
-            except Exception as exc:
-                self._event_bus.publish(
-                    HudEvent(
-                        name="HUD_WIDGET_ERROR",
-                        payload={"bundle_id": manifest.id, "error": str(exc)},
-                        source="hud.overlay.manager"
-                    )
-                )
-
-        # Broadcast success
-        self._event_bus.publish(
-            HudEvent(
-                name="HUD_BUNDLE_MOUNTED",
-                payload={"bundle_id": manifest.id},
-                source="hud.overlay.manager"
-            )
-        )
+        widget_instance.move(pos_tuple[0], pos_tuple[1])
+        widget_instance.show()
+        
+        self._mounted_bundles[bundle_id] = True
 
     def unmount(self, bundle_id: str) -> None:
-        """Unmount and destroy a loaded bundle."""
-        self._overlay.unmount_widget(bundle_id)
+        """Hide and unmount a widget from the overlay."""
+        if bundle_id not in self._mounted_bundles:
+            return
+            
+        widget_instance, manifest = self._registered_bundles[bundle_id]
         
-        self._event_bus.publish(
-            HudEvent(
-                name=HUD_BUNDLE_UNMOUNTED,
-                payload={"bundle_id": bundle_id},
-                source="hud.overlay.manager"
-            )
-        )
+        if hasattr(widget_instance, "unmount"):
+            widget_instance.unmount()
+            
+        widget_instance.hide()
+        widget_instance.setParent(None)
+        
+        del self._mounted_bundles[bundle_id]
+
+    def get_registered(self) -> list[str]:
+        """Return a list of all registered bundle IDs."""
+        return list(self._registered_bundles.keys())
+
+    def get_mounted(self) -> list[str]:
+        """Return a list of all currently mounted bundle IDs."""
+        return list(self._mounted_bundles.keys())

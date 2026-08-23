@@ -12,8 +12,10 @@ def ensure_daemon_running() -> subprocess.Popen | None:
     client = HudDaemonClient()
     try:
         client.get_registered_widgets()
+        client.close()
         return None  # Already running
     except DaemonConnectionError:
+        client.close()
         print("Daemon is not running. Launching it in the background...")
         daemon_script = Path(__file__).parent.parent / "scripts" / "run_daemon.py"
         process = subprocess.Popen([sys.executable, str(daemon_script)])
@@ -22,7 +24,10 @@ def ensure_daemon_running() -> subprocess.Popen | None:
         for _ in range(10):
             try:
                 time.sleep(0.5)
-                client.get_registered_widgets()
+                # Create a new client to test connection
+                test_client = HudDaemonClient()
+                test_client.get_registered_widgets()
+                test_client.close()
                 print("Daemon successfully started!")
                 return process
             except DaemonConnectionError:

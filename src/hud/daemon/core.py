@@ -10,14 +10,12 @@ from hud.bundle.loader import HudBundleLoader
 from hud.events.bus import HudEventBus
 from hud.overlay.engine import HudOverlayWindow
 from hud.overlay.manager import HudOverlayManager
-from hud.daemon.config import load_daemon_config
 
 
 class HudDaemon:
     """Headless background runner for the HUD Overlay."""
 
-    def __init__(self, config_path: Path) -> None:
-        self.config_path = config_path
+    def __init__(self) -> None:
         self._setup_architecture()
         self._setup_tray_icon()
 
@@ -58,22 +56,6 @@ class HudDaemon:
 
         self.tray_icon.setContextMenu(menu)
         self.tray_icon.show()
-
-    def load_autostart_widgets(self) -> None:
-        """Load and mount widgets defined in the configuration file."""
-        config = load_daemon_config(self.config_path)
-        
-        for widget_path_str in config.autostart_widgets:
-            widget_path = Path(widget_path_str)
-            if not widget_path.is_absolute():
-                # If relative, resolve against the config file's directory
-                widget_path = self.config_path.parent / widget_path
-                
-            try:
-                self.manager.load_and_mount(widget_path)
-                print(f"[HUD Daemon] Successfully mounted {widget_path.name}")
-            except Exception as e:
-                print(f"[HUD Daemon] Failed to mount {widget_path.name}: {e}", file=sys.stderr)
 
     def quit(self) -> None:
         """Exit the daemon gracefully."""
