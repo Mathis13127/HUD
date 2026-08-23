@@ -79,4 +79,4 @@ def test_bundle_loader_missing_manifest(tmp_path: Path) -> None:
 
     with pytest.raises(WidgetLoadError) as exc:
         loader.load_bundle(widget_file)
-    assert "missing the required 'MANIFEST'" in str(exc.value)
+    assert "Bundle is missing 'MANIFEST' dictionary" in str(exc.value)

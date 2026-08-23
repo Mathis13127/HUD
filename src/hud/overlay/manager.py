@@ -60,6 +60,32 @@ class HudOverlayManager:
         self._registered_bundles[manifest.id] = (widget_instance, manifest)
         return manifest.id
 
+    def register_code(self, source_code: str) -> str:
+        """Parse and load a widget into memory from raw source code (In-Memory).
+
+        Args:
+            source_code: Raw Python code string containing MANIFEST and Widget.
+
+        Returns:
+            The loaded bundle ID.
+            
+        Raises:
+            WidgetSecurityError: If code violates the AST sandbox.
+            WidgetLoadError: If compilation or loading fails.
+            WidgetTypeError: If the bundle does not export a QWidget.
+            ManifestValidationError: If the manifest is invalid.
+        """
+        widget_instance, manifest = self._loader.load_bundle_from_source(source_code)
+
+        if not isinstance(widget_instance, QWidget):
+            raise WidgetTypeError(
+                bundle_id=manifest.id,
+                found_type=type(widget_instance).__name__
+            )
+
+        self._registered_bundles[manifest.id] = (widget_instance, manifest)
+        return manifest.id
+
     def mount(self, bundle_id: str) -> None:
         """Mount a registered widget to the overlay.
 

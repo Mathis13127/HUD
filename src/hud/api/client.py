@@ -72,6 +72,18 @@ class HudDaemonClient:
         res = self._send_command({"action": "register", "path": str(Path(file_path).absolute())})
         return res["bundle_id"]
 
+    def register_widget_from_code(self, source_code: str) -> str:
+        """Register a widget in the Daemon directly from raw Python code (In-Memory).
+        
+        Args:
+            source_code: The raw string of Python code containing MANIFEST and Widget class.
+            
+        Returns:
+            The loaded bundle_id.
+        """
+        res = self._send_command({"action": "register_code", "code": source_code})
+        return res["bundle_id"]
+
     def mount_widget(self, bundle_id: str) -> None:
         """Display a registered widget on the overlay.
         

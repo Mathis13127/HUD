@@ -55,6 +55,11 @@ class HudTcpServer(QObject):
             bundle_id = self._manager.register(path)
             return {"status": "ok", "bundle_id": bundle_id}
             
+        elif action == "register_code":
+            code = payload.get("code", "")
+            bundle_id = self._manager.register_code(code)
+            return {"status": "ok", "bundle_id": bundle_id}
+            
         elif action == "mount":
             bundle_id = payload.get("bundle_id", "")
             self._manager.mount(bundle_id)

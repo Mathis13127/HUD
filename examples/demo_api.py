@@ -42,9 +42,8 @@ def main() -> None:
     registered = client.get_registered_widgets()
     print(f"Connected! Currently registered widgets: {registered}")
 
-    # 2. Create a temporary widget just for this demo
-    demo_widget_path = Path(__file__).parent / "temp_api_demo_widget.py"
-    demo_widget_path.write_text(
+    # 2. Register widget dynamically from code string!
+    source_code = (
         "from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel\n"
         "from PySide6.QtCore import Qt\n"
         "\n"
@@ -64,19 +63,18 @@ def main() -> None:
         "        super().__init__()\n"
         "        self.setFixedSize(300, 100)\n"
         "        layout = QVBoxLayout(self)\n"
-        "        self.lbl = QLabel('Injecté via API !')\n"
-        "        self.lbl.setStyleSheet('color: white; font-size: 20px; font-weight: bold; background: rgba(0,0,0,180); padding: 10px; border-radius: 10px;')\n"
+        "        self.lbl = QLabel('Injecté IN-MEMORY !')\n"
+        "        self.lbl.setStyleSheet('color: white; font-size: 20px; font-weight: bold; background: rgba(255,0,0,180); padding: 10px; border-radius: 10px;')\n"
         "        self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)\n"
         "        layout.addWidget(self.lbl)\n"
         "\n"
         "    def mount(self):\n"
-        "        pass\n",
-        encoding="utf-8"
+        "        pass\n"
     )
 
     try:
-        print(f"\nRegistering widget: {demo_widget_path.name}")
-        bundle_id = client.register_widget(demo_widget_path)
+        print("\nRegistering widget from raw Python string (In-Memory)...")
+        bundle_id = client.register_widget_from_code(source_code)
         print(f"Successfully registered as: {bundle_id}")
         
         print("Mounting widget to screen (Check bottom right of your screen!)...")
@@ -98,10 +96,6 @@ def main() -> None:
         client.unmount_widget(bundle_id)
         
     finally:
-        # Cleanup file
-        if demo_widget_path.exists():
-            demo_widget_path.unlink()
-            
         # Kill the daemon if we spawned it specifically for this script
         if daemon_process:
             print("\nShutting down temporary daemon...")
