@@ -1,6 +1,12 @@
 """Production Launcher for the JARVIS HUD Engine."""
 
 import sys
+from pathlib import Path
+
+hud_src = Path(__file__).resolve().parent.parent / "src"
+if hud_src.exists() and str(hud_src) not in sys.path:
+    sys.path.insert(0, str(hud_src))
+
 from PySide6.QtWidgets import QApplication
 from hud.daemon.core import HudDaemon
 
