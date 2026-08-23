@@ -1,22 +1,51 @@
 """Pure API Demo showing how to interact with the HUD Daemon."""
 
+import sys
 import time
+import subprocess
 from pathlib import Path
+
+# Add src to python path so it works without installing the package
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from hud.api.client import HudDaemonClient, DaemonConnectionError
 
+def ensure_daemon_running() -> subprocess.Popen | None:
+    """Check if daemon is reachable, otherwise spawn it in the background."""
+    client = HudDaemonClient()
+    try:
+        client.get_registered_widgets()
+        return None  # Already running
+    except DaemonConnectionError:
+        print("Daemon is not running. Launching it in the background...")
+        daemon_script = Path(__file__).parent.parent / "scripts" / "run_daemon.py"
+        process = subprocess.Popen([sys.executable, str(daemon_script)])
+        
+        # Wait for daemon to boot up
+        for _ in range(10):
+            try:
+                time.sleep(0.5)
+                client.get_registered_widgets()
+                print("Daemon successfully started!")
+                return process
+            except DaemonConnectionError:
+                continue
+                
+        print("Failed to start daemon.")
+        process.terminate()
+        sys.exit(1)
+
+
 def main() -> None:
+    # 1. Start daemon if missing
+    daemon_process = ensure_daemon_running()
+    
     client = HudDaemonClient()
     
-    print("Checking if daemon is running...")
-    try:
-        registered = client.get_registered_widgets()
-        print(f"Connected! Currently registered widgets: {registered}")
-    except DaemonConnectionError as e:
-        print(f"Failed to connect to Daemon. Make sure 'python scripts/run_daemon.py' is running in another terminal.\nError: {e}")
-        return
+    registered = client.get_registered_widgets()
+    print(f"Connected! Currently registered widgets: {registered}")
 
-    # Let's create a temporary widget just for this demo
+    # 2. Create a temporary widget just for this demo
     demo_widget_path = Path("temp_api_demo_widget.py").absolute()
     demo_widget_path.write_text(
         "from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel\n"
@@ -44,17 +73,16 @@ def main() -> None:
         "        layout.addWidget(self.lbl)\n"
         "\n"
         "    def mount(self):\n"
-        "        # On mount, we could listen to bus events!\n"
         "        pass\n",
         encoding="utf-8"
     )
 
     try:
-        print(f"Registering widget: {demo_widget_path}")
+        print(f"\nRegistering widget: {demo_widget_path.name}")
         bundle_id = client.register_widget(demo_widget_path)
         print(f"Successfully registered as: {bundle_id}")
         
-        print("Mounting widget to screen...")
+        print("Mounting widget to screen (Check bottom right of your screen!)...")
         client.mount_widget(bundle_id)
         
         active = client.get_mounted_widgets()
@@ -77,7 +105,12 @@ def main() -> None:
         if demo_widget_path.exists():
             demo_widget_path.unlink()
             
-    print("Demo complete!")
+        # Kill the daemon if we spawned it specifically for this script
+        if daemon_process:
+            print("\nShutting down temporary daemon...")
+            daemon_process.terminate()
+            
+    print("\nDemo complete!")
 
 if __name__ == "__main__":
     main()
