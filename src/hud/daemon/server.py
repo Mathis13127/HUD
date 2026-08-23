@@ -82,6 +82,18 @@ class HudTcpServer(QObject):
             self._manager.unmount(bundle_id)
             return {"status": "ok"}
             
+        elif action == "unregister":
+            bundle_id = payload.get("bundle_id", "")
+            self._manager.unregister(bundle_id)
+            return {"status": "ok"}
+            
+        elif action == "get_code":
+            bundle_id = payload.get("bundle_id", "")
+            code = self._manager.get_code(bundle_id)
+            if code is None:
+                return {"status": "error", "reason": "Widget not found"}
+            return {"status": "ok", "code": code}
+            
         elif action == "get_registered":
             return {"status": "ok", "widgets": self._manager.get_registered()}
             

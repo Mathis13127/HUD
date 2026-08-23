@@ -19,10 +19,16 @@ class HudOverlayManager:
         self._loader = bundle_loader
         self._event_bus = event_bus
         
-        # bundle_id -> (WidgetInstance, Manifest)
-        self._registered_bundles: dict[str, tuple[QWidget, HudWidgetManifest]] = {}
+        # bundle_id -> (WidgetInstance, Manifest, source_code)
+        self._registered_bundles: dict[str, tuple[QWidget, HudWidgetManifest, str]] = {}
         # bundle_id -> True
         self._mounted_bundles: dict[str, bool] = {}
+
+    def get_code(self, bundle_id: str) -> str | None:
+        """Retrieve the source code of a registered widget."""
+        if bundle_id in self._registered_bundles:
+            return self._registered_bundles[bundle_id][2]
+        return None
 
     def register_code(self, source_code: str) -> str:
         """Parse and load a widget into memory from raw source code (In-Memory).
@@ -47,7 +53,10 @@ class HudOverlayManager:
                 found_type=type(widget_instance).__name__
             )
 
-        self._registered_bundles[manifest.id] = (widget_instance, manifest)
+        if manifest.id in self._registered_bundles:
+            self.unregister(manifest.id)
+
+        self._registered_bundles[manifest.id] = (widget_instance, manifest, source_code)
         return manifest.id
 
     def unregister(self, bundle_id: str) -> None:
@@ -64,20 +73,24 @@ class HudOverlayManager:
         if bundle_id in self._mounted_bundles:
             raise WidgetAlreadyMountedError(bundle_id)
             
-        widget_instance, manifest = self._registered_bundles[bundle_id]
+        widget_instance, manifest, _ = self._registered_bundles[bundle_id]
         
         if hasattr(widget_instance, "mount"):
             widget_instance.mount()
 
         widget_instance.setParent(self.overlay)
-        pos_tuple = calculate_absolute_position(
-            manifest.default_placement,
-            widget_instance.width(),
-            widget_instance.height(),
-            self.overlay.width(),
-            self.overlay.height()
-        )
-        widget_instance.move(pos_tuple[0], pos_tuple[1])
+        if manifest.default_placement:
+            pos_tuple = calculate_absolute_position(
+                manifest.default_placement.anchor,
+                manifest.default_placement.offset_x,
+                manifest.default_placement.offset_y,
+                widget_instance.width(),
+                widget_instance.height(),
+                self.overlay.width(),
+                self.overlay.height()
+            )
+            widget_instance.move(pos_tuple[0], pos_tuple[1])
+            
         widget_instance.show()
         
         self._mounted_bundles[bundle_id] = True
@@ -87,7 +100,7 @@ class HudOverlayManager:
         if bundle_id not in self._mounted_bundles:
             return
             
-        widget_instance, manifest = self._registered_bundles[bundle_id]
+        widget_instance, _, _ = self._registered_bundles[bundle_id]
         
         if hasattr(widget_instance, "unmount"):
             widget_instance.unmount()

@@ -1,69 +1,236 @@
-"""Main application window for HUD Studio."""
+"""Live IDE and Manager for HUD Thin Client Architecture."""
 
-from pathlib import Path
+from PySide6.QtWidgets import (
+    QMainWindow, QSplitter, QWidget, QHBoxLayout, QVBoxLayout, 
+    QListWidget, QPushButton, QPlainTextEdit, QLabel, QMessageBox, QListWidgetItem
+)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
 
-from PySide6.QtWidgets import QMainWindow, QSplitter, QWidget, QHBoxLayout
+from hud.api.client import HudDaemonClient, DaemonConnectionError
+
+DEFAULT_PLACEHOLDER = '''from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut
 
-from hud.overlay.manager import HudOverlayManager
-from hud.studio.controller import StudioController
-from hud.studio.panels.editor import WorkspaceEditor
-from hud.studio.panels.explorer import BundleExplorer
-from hud.studio.panels.preview_control import ControlPanel
+MANIFEST = {
+    'id': 'my.live.widget',
+    'name': 'Live Widget',
+    'version': '1.0',
+    'default_placement': {
+        'anchor': 'center'
+    }
+}
 
+class Widget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(300, 100)
+        layout = QVBoxLayout(self)
+        
+        self.lbl = QLabel('Live Injected Widget!')
+        self.lbl.setStyleSheet(
+            'color: white; font-size: 20px; font-weight: bold; '
+            'background: rgba(0,255,0,100); padding: 10px; border-radius: 10px;'
+        )
+        self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addWidget(self.lbl)
+        
+    def mount(self):
+        pass
+'''
 
 class HudStudioWindow(QMainWindow):
-    """The main IDE window for editing HUD bundles."""
+    """The main Live IDE window for editing and managing in-memory HUD widgets."""
 
-    def __init__(self, overlay_manager: HudOverlayManager, bundles_dir: Path) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("JARVIS HUD Studio")
+        self.setWindowTitle("JARVIS HUD Studio (Live Thin Client)")
         self.resize(1200, 800)
 
-        # Apply dark theme stylesheet for the editor
+        # Apply dark theme
         self.setStyleSheet("""
             QMainWindow, QWidget { background-color: #2D2D30; color: #CCCCCC; }
-            QTreeView { background-color: #1E1E1E; border: none; }
+            QListWidget { background-color: #1E1E1E; border: none; font-size: 14px; }
+            QListWidget::item { padding: 8px; }
+            QListWidget::item:selected { background-color: #007ACC; }
             QPlainTextEdit { background-color: #1E1E1E; color: #D4D4D4; border: 1px solid #3F3F46; }
-            QTabWidget::pane { border: 1px solid #3F3F46; }
-            QTabBar::tab { background: #2D2D30; border: 1px solid #3F3F46; padding: 5px; }
-            QTabBar::tab:selected { background: #1E1E1E; }
+            QPushButton { background-color: #3F3F46; border: none; padding: 8px; border-radius: 4px; }
+            QPushButton:hover { background-color: #555555; }
+            QPushButton:pressed { background-color: #007ACC; }
+            QPushButton#deployBtn { background-color: #007ACC; font-weight: bold; }
+            QPushButton#deployBtn:hover { background-color: #0098FF; }
         """)
 
-        self._setup_ui(bundles_dir)
+        self.client = HudDaemonClient()
+        self.current_bundle_id: str | None = None
+
+        self._setup_ui()
         
-        # Initialize Controller
-        self.controller = StudioController(
-            overlay_manager=overlay_manager,
-            explorer=self.explorer,
-            editor=self.editor,
-            control=self.control,
-            bundles_dir=bundles_dir,
-        )
-
-        # Setup Ctrl+S Shortcut
+        # Shortcut for quick deploy
         self.shortcut_save = QShortcut(QKeySequence("Ctrl+S"), self)
-        self.shortcut_save.activated.connect(self.controller.deploy_active_bundle)
+        self.shortcut_save.activated.connect(self.deploy_current_code)
 
-    def _setup_ui(self, bundles_dir: Path) -> None:
+        # Auto-refresh timer
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh_widgets_list)
+        self.refresh_timer.start(2000)
+        
+        self.refresh_widgets_list()
+
+    def _setup_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
         layout = QHBoxLayout(central)
-
+        layout.setContentsMargins(0, 0, 0, 0)
+        
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
-        # Instantiate Panels
-        self.explorer = BundleExplorer(bundles_dir)
-        self.editor = WorkspaceEditor()
-        self.control = ControlPanel()
+        # --- LEFT PANEL (Live Manager) ---
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        
+        left_layout.addWidget(QLabel("<b>Running Widgets (Daemon Memory)</b>"))
+        
+        self.list_widget = QListWidget()
+        self.list_widget.itemClicked.connect(self.on_widget_selected)
+        left_layout.addWidget(self.list_widget)
+        
+        btn_refresh = QPushButton("🔄 Refresh Status")
+        btn_refresh.clicked.connect(self.refresh_widgets_list)
+        left_layout.addWidget(btn_refresh)
+        
+        btn_new = QPushButton("✨ New Placeholder")
+        btn_new.clicked.connect(self.create_placeholder)
+        left_layout.addWidget(btn_new)
+        
+        btn_unmount = QPushButton("🚫 Unmount Selected")
+        btn_unmount.clicked.connect(self.unmount_selected)
+        left_layout.addWidget(btn_unmount)
+        
+        btn_unregister = QPushButton("🗑️ Unregister Selected")
+        btn_unregister.clicked.connect(self.unregister_selected)
+        left_layout.addWidget(btn_unregister)
+        
+        splitter.addWidget(left_widget)
 
-        splitter.addWidget(self.explorer)
-        splitter.addWidget(self.editor)
-        splitter.addWidget(self.control)
-
-        # Set stretch factors (e.g. 20% explorer, 60% editor, 20% control)
+        # --- RIGHT PANEL (Code Editor) ---
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        
+        header_layout = QHBoxLayout()
+        self.lbl_editing = QLabel("<b>Editor:</b> No widget selected")
+        header_layout.addWidget(self.lbl_editing)
+        header_layout.addStretch()
+        
+        btn_deploy = QPushButton("🚀 Deploy & Mount (Ctrl+S)")
+        btn_deploy.setObjectName("deployBtn")
+        btn_deploy.clicked.connect(self.deploy_current_code)
+        header_layout.addWidget(btn_deploy)
+        
+        right_layout.addLayout(header_layout)
+        
+        self.editor = QPlainTextEdit()
+        font = QFont("Consolas", 12)
+        self.editor.setFont(font)
+        # Use 4-space hard tabs for python code
+        self.editor.setTabStopDistance(self.editor.fontMetrics().horizontalAdvance(" ") * 4)
+        right_layout.addWidget(self.editor)
+        
+        splitter.addWidget(right_widget)
+        
         splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 4)
-        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(1, 3)
+
+    def refresh_widgets_list(self) -> None:
+        """Poll the Daemon for registered and mounted widgets."""
+        try:
+            registered = self.client.get_registered_widgets()
+            mounted = self.client.get_mounted_widgets()
+        except DaemonConnectionError:
+            self.list_widget.clear()
+            self.list_widget.addItem("Daemon offline or unreachable.")
+            return
+
+        self.list_widget.clear()
+        for b_id in registered:
+            is_mounted = b_id in mounted
+            display_text = f"🟢 {b_id}" if is_mounted else f"⚪ {b_id}"
+            item = QListWidgetItem(display_text)
+            item.setData(Qt.ItemDataRole.UserRole, b_id)
+            self.list_widget.addItem(item)
+
+    def on_widget_selected(self, item: QListWidgetItem) -> None:
+        bundle_id = item.data(Qt.ItemDataRole.UserRole)
+        if not bundle_id:
+            return
+            
+        self.current_bundle_id = bundle_id
+        self.lbl_editing.setText(f"<b>Editor:</b> {bundle_id}")
+        
+        try:
+            code = self.client.get_widget_code(bundle_id)
+            self.editor.setPlainText(code)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not fetch code:\n{e}")
+
+    def create_placeholder(self) -> None:
+        self.current_bundle_id = "my.live.widget"
+        self.lbl_editing.setText(f"<b>Editor:</b> {self.current_bundle_id} (Unsaved)")
+        self.editor.setPlainText(DEFAULT_PLACEHOLDER)
+
+    def deploy_current_code(self) -> None:
+        code = self.editor.toPlainText().strip()
+        if not code:
+            return
+            
+        try:
+            # 1. Register Code
+            bundle_id = self.client.register_widget_from_code(code)
+            
+            # 2. Mount Code
+            # It might already be mounted, which throws an error, so we unmount first if needed
+            # Actually, to make it seamless, unregister first if it exists? No, registering 
+            # with same ID overwrites it? Wait, the manager doesn't overwrite cleanly if mounted.
+            # Let's unregister first safely.
+            try:
+                self.client.unregister_widget(bundle_id)
+            except Exception:
+                pass
+                
+            bundle_id = self.client.register_widget_from_code(code)
+            self.client.mount_widget(bundle_id)
+            
+            self.current_bundle_id = bundle_id
+            self.lbl_editing.setText(f"<b>Editor:</b> {bundle_id}")
+            self.refresh_widgets_list()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Deployment Failed", str(e))
+
+    def unmount_selected(self) -> None:
+        item = self.list_widget.currentItem()
+        if not item:
+            return
+        b_id = item.data(Qt.ItemDataRole.UserRole)
+        try:
+            self.client.unmount_widget(b_id)
+            self.refresh_widgets_list()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def unregister_selected(self) -> None:
+        item = self.list_widget.currentItem()
+        if not item:
+            return
+        b_id = item.data(Qt.ItemDataRole.UserRole)
+        try:
+            self.client.unregister_widget(b_id)
+            if self.current_bundle_id == b_id:
+                self.editor.clear()
+                self.current_bundle_id = None
+                self.lbl_editing.setText("<b>Editor:</b> No widget selected")
+            self.refresh_widgets_list()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))

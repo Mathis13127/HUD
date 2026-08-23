@@ -94,8 +94,17 @@ class HudDaemonClient:
         self._send_command({"action": "mount", "bundle_id": bundle_id})
 
     def unmount_widget(self, bundle_id: str) -> None:
-        """Hide a widget from the overlay."""
+        """Unmount a widget from the HUD screen."""
         self._send_command({"action": "unmount", "bundle_id": bundle_id})
+
+    def unregister_widget(self, bundle_id: str) -> None:
+        """Completely unregister and remove a widget from Daemon memory."""
+        self._send_command({"action": "unregister", "bundle_id": bundle_id})
+
+    def get_widget_code(self, bundle_id: str) -> str:
+        """Retrieve the original source code injected for this widget."""
+        response = self._send_command({"action": "get_code", "bundle_id": bundle_id})
+        return response.get("code", "")
 
     def get_registered_widgets(self) -> list[str]:
         """List all widgets loaded in memory."""
