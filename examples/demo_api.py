@@ -5,9 +5,6 @@ import time
 import subprocess
 from pathlib import Path
 
-# Add src to python path so it works without installing the package
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from hud.api.client import HudDaemonClient, DaemonConnectionError
 
 def ensure_daemon_running() -> subprocess.Popen | None:
