@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hud"
+version = "0.1.0"
+description = "Monitoring, debugging and execution UI interface for J.A.R.V.I.S"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "J.A.R.V.I.S Architecture Team" }
+]
+dependencies = [
+    "PySide6",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-qt"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
