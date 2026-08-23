@@ -93,9 +93,6 @@ class HudOverlayManager:
             
         widget_instance, manifest, _ = self._registered_bundles[bundle_id]
         
-        if hasattr(widget_instance, "mount"):
-            widget_instance.mount()
-
         widget_instance.setParent(self.overlay)
         if manifest.default_placement:
             pos_tuple = calculate_absolute_position(
@@ -108,6 +105,9 @@ class HudOverlayManager:
                 self.overlay.height()
             )
             widget_instance.move(pos_tuple[0], pos_tuple[1])
+
+        if hasattr(widget_instance, "mount"):
+            widget_instance.mount()
             
         widget_instance.show()
         
