@@ -12,13 +12,12 @@ from hud.studio.app import HudStudioWindow
 
 def ensure_daemon_running() -> subprocess.Popen | None:
     """Check if daemon is reachable, otherwise spawn it in the background."""
-    client = HudDaemonClient()
     try:
+        client = HudDaemonClient()
         client.get_registered_widgets()
         client.close()
         return None  # Already running
     except DaemonConnectionError:
-        client.close()
         print("Daemon is not running. Launching it in the background...")
         daemon_script = Path(__file__).parent / "run_daemon.py"
         process = subprocess.Popen([sys.executable, str(daemon_script)])
@@ -45,14 +44,15 @@ def main() -> None:
     daemon_process = ensure_daemon_running()
     
     # 2. Check connection before launching
-    client = HudDaemonClient()
     try:
+        client = HudDaemonClient()
         client.get_registered_widgets()
     except DaemonConnectionError:
         QMessageBox.critical(None, "Error", "Could not connect to HUD Daemon. Start it manually with run_daemon.py")
         sys.exit(1)
     finally:
-        client.close()
+        if 'client' in locals() and hasattr(client, 'close'):
+            client.close()
         
     # 3. Start the Studio Window
     studio = HudStudioWindow()

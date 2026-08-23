@@ -1,4 +1,4 @@
-"""Pure API Demo showing how to interact with the HUD Daemon."""
+﻿"""Pure API Demo showing how to interact with the HUD Daemon."""
 
 import sys
 import time
@@ -9,13 +9,12 @@ from hud.api.client import HudDaemonClient, DaemonConnectionError
 
 def ensure_daemon_running() -> subprocess.Popen | None:
     """Check if daemon is reachable, otherwise spawn it in the background."""
-    client = HudDaemonClient()
     try:
+        client = HudDaemonClient()
         client.get_registered_widgets()
         client.close()
         return None  # Already running
     except DaemonConnectionError:
-        client.close()
         print("Daemon is not running. Launching it in the background...")
         daemon_script = Path(__file__).parent.parent / "scripts" / "run_daemon.py"
         process = subprocess.Popen([sys.executable, str(daemon_script)])
@@ -42,7 +41,13 @@ def main() -> None:
     # 1. Start daemon if missing
     daemon_process = ensure_daemon_running()
     
-    client = HudDaemonClient()
+    try:
+        client = HudDaemonClient()
+    except DaemonConnectionError as e:
+        print(f"Failed to connect: {e}")
+        if daemon_process:
+            daemon_process.terminate()
+        sys.exit(1)
     
     registered = client.get_registered_widgets()
     print(f"Connected! Currently registered widgets: {registered}")
