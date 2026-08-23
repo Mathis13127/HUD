@@ -123,3 +123,70 @@ class HudDaemonClient:
             "event_name": event_name,
             "payload": payload
         })
+
+
+class HudInProcessClient:
+    """Direct in-process client for HUD Overlay (Zero sockets, Zero network latency, Native Qt)."""
+
+    def __init__(self, overlay_manager: Any | None = None, event_bus: Any | None = None) -> None:
+        from hud.events.bus import HudEventBus
+        from hud.events.types import HudEvent
+
+        self._HudEvent = HudEvent
+
+        if overlay_manager is None:
+            from hud.bundle.loader import HudBundleLoader
+            from hud.overlay.engine import HudOverlayWindow
+            from hud.overlay.manager import HudOverlayManager
+
+            self.event_bus = event_bus or HudEventBus()
+            self.loader = HudBundleLoader()
+            self.overlay = HudOverlayWindow()
+            self.overlay.maximize_to_screen()
+            self.overlay.show()
+            self.manager = HudOverlayManager(
+                overlay=self.overlay,
+                bundle_loader=self.loader,
+                event_bus=self.event_bus,
+            )
+        else:
+            self.manager = overlay_manager
+            self.event_bus = event_bus or getattr(overlay_manager, "_event_bus", HudEventBus())
+            self.overlay = getattr(overlay_manager, "overlay", None)
+
+    def register_widget_from_code(self, source_code: str) -> str:
+        """Register a widget directly in-process from raw Python code."""
+        return self.manager.register_code(source_code)
+
+    def mount_widget(self, bundle_id: str) -> None:
+        """Display a registered widget on the in-process overlay."""
+        self.manager.mount(bundle_id)
+
+    def unmount_widget(self, bundle_id: str) -> None:
+        """Unmount a widget from the in-process overlay."""
+        self.manager.unmount(bundle_id)
+
+    def unregister_widget(self, bundle_id: str) -> None:
+        """Completely unregister a widget from memory."""
+        self.manager.unregister(bundle_id)
+
+    def get_widget_code(self, bundle_id: str) -> str:
+        """Retrieve the source code of a registered widget."""
+        return self.manager.get_code(bundle_id) or ""
+
+    def get_registered_widgets(self) -> list[str]:
+        """List all widgets loaded in memory."""
+        return list(self.manager._registered_bundles.keys())
+
+    def get_mounted_widgets(self) -> list[str]:
+        """List all widgets currently visible on screen."""
+        return list(self.manager._mounted_bundles.keys())
+
+    def send_event(self, event_name: str, payload: dict[str, Any]) -> None:
+        """Broadcast an event onto the HUD Event Bus."""
+        self.event_bus.publish(self._HudEvent(name=event_name, payload=payload))
+
+    def close(self) -> None:
+        """Close the in-process overlay window."""
+        if hasattr(self, "overlay") and self.overlay:
+            self.overlay.close()

@@ -3,6 +3,7 @@
 Public API exports for the hud package (Rule L3).
 """
 
+from hud.api.client import HudDaemonClient, HudInProcessClient
 from hud.api.models import HudViewState
 from hud.api.protocols import (
     HudClientProtocol,
@@ -40,6 +41,8 @@ __version__ = "0.1.0"
 __all__ = [
     # Client & Core
     "HudClient",
+    "HudInProcessClient",
+    "HudDaemonClient",
     "HudViewState",
     "HudRendererProtocol",
     "StateSyncProtocol",
