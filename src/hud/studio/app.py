@@ -105,14 +105,6 @@ class HudStudioWindow(QMainWindow):
         btn_new.clicked.connect(self.create_placeholder)
         left_layout.addWidget(btn_new)
         
-        btn_unmount = QPushButton("🚫 Unmount Selected")
-        btn_unmount.clicked.connect(self.unmount_selected)
-        left_layout.addWidget(btn_unmount)
-        
-        btn_unregister = QPushButton("🗑️ Unregister Selected")
-        btn_unregister.clicked.connect(self.unregister_selected)
-        left_layout.addWidget(btn_unregister)
-        
         splitter.addWidget(left_widget)
 
         # --- RIGHT PANEL (Code Editor) ---
@@ -128,6 +120,14 @@ class HudStudioWindow(QMainWindow):
         btn_deploy.setObjectName("deployBtn")
         btn_deploy.clicked.connect(self.deploy_current_code)
         header_layout.addWidget(btn_deploy)
+        
+        btn_unmount = QPushButton("🚫 Unmount")
+        btn_unmount.clicked.connect(self.unmount_current)
+        header_layout.addWidget(btn_unmount)
+        
+        btn_unregister = QPushButton("🗑️ Unregister")
+        btn_unregister.clicked.connect(self.unregister_current)
+        header_layout.addWidget(btn_unregister)
         
         right_layout.addLayout(header_layout)
         
@@ -153,13 +153,19 @@ class HudStudioWindow(QMainWindow):
             self.list_widget.addItem("Daemon offline or unreachable.")
             return
 
+        self.list_widget.blockSignals(True)
         self.list_widget.clear()
+        
         for b_id in registered:
             is_mounted = b_id in mounted
             display_text = f"🟢 {b_id}" if is_mounted else f"⚪ {b_id}"
             item = QListWidgetItem(display_text)
             item.setData(Qt.ItemDataRole.UserRole, b_id)
             self.list_widget.addItem(item)
+            if b_id == self.current_bundle_id:
+                item.setSelected(True)
+                
+        self.list_widget.blockSignals(False)
 
     def on_widget_selected(self, item: QListWidgetItem) -> None:
         bundle_id = item.data(Qt.ItemDataRole.UserRole)
@@ -179,6 +185,10 @@ class HudStudioWindow(QMainWindow):
         self.current_bundle_id = "my.live.widget"
         self.lbl_editing.setText(f"<b>Editor:</b> {self.current_bundle_id} (Unsaved)")
         self.editor.setPlainText(DEFAULT_PLACEHOLDER)
+        # Clear list selection visually
+        self.list_widget.blockSignals(True)
+        self.list_widget.clearSelection()
+        self.list_widget.blockSignals(False)
 
     def deploy_current_code(self) -> None:
         code = self.editor.toPlainText().strip()
@@ -189,17 +199,8 @@ class HudStudioWindow(QMainWindow):
             # 1. Register Code
             bundle_id = self.client.register_widget_from_code(code)
             
-            # 2. Mount Code
-            # It might already be mounted, which throws an error, so we unmount first if needed
-            # Actually, to make it seamless, unregister first if it exists? No, registering 
-            # with same ID overwrites it? Wait, the manager doesn't overwrite cleanly if mounted.
-            # Let's unregister first safely.
-            try:
-                self.client.unregister_widget(bundle_id)
-            except Exception:
-                pass
-                
-            bundle_id = self.client.register_widget_from_code(code)
+            # 2. Unregister if it was previously there, although manager.register_code does it.
+            # But the manager overwriting might just drop it, let's just mount it.
             self.client.mount_widget(bundle_id)
             
             self.current_bundle_id = bundle_id
@@ -209,28 +210,23 @@ class HudStudioWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Deployment Failed", str(e))
 
-    def unmount_selected(self) -> None:
-        item = self.list_widget.currentItem()
-        if not item:
+    def unmount_current(self) -> None:
+        if not self.current_bundle_id:
             return
-        b_id = item.data(Qt.ItemDataRole.UserRole)
         try:
-            self.client.unmount_widget(b_id)
+            self.client.unmount_widget(self.current_bundle_id)
             self.refresh_widgets_list()
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
-    def unregister_selected(self) -> None:
-        item = self.list_widget.currentItem()
-        if not item:
+    def unregister_current(self) -> None:
+        if not self.current_bundle_id:
             return
-        b_id = item.data(Qt.ItemDataRole.UserRole)
         try:
-            self.client.unregister_widget(b_id)
-            if self.current_bundle_id == b_id:
-                self.editor.clear()
-                self.current_bundle_id = None
-                self.lbl_editing.setText("<b>Editor:</b> No widget selected")
+            self.client.unregister_widget(self.current_bundle_id)
+            self.editor.clear()
+            self.current_bundle_id = None
+            self.lbl_editing.setText("<b>Editor:</b> No widget selected")
             self.refresh_widgets_list()
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
