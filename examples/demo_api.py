@@ -43,7 +43,7 @@ def main() -> None:
     print(f"Connected! Currently registered widgets: {registered}")
 
     # 2. Create a temporary widget just for this demo
-    demo_widget_path = Path("temp_api_demo_widget.py").absolute()
+    demo_widget_path = Path(__file__).parent / "temp_api_demo_widget.py"
     demo_widget_path.write_text(
         "from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel\n"
         "from PySide6.QtCore import Qt\n"
