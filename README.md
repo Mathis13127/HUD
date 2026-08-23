@@ -1,69 +1,101 @@
-# JARVIS HUD Subsystem 🎯
+# JARVIS HUD Subsystem 🟢
 
-The **HUD (Heads-Up Display) Subsystem** is a real-time, click-through desktop overlay engine built with PySide6. It allows JARVIS to project non-intrusive, dynamic widgets (like Siri-style orbs, subtitles, or system monitors) directly onto the user's desktop environment.
+> **HUD (Heads-Up Display)** is the standalone, purely in-memory visual rendering engine for the JARVIS ecosystem.
 
-## 🌟 Key Features
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![PySide6](https://img.shields.io/badge/PySide-6-green.svg)](https://doc.qt.io/qtforpython/)
 
-- **True Desktop Overlay**: Uses advanced PySide6 window flags (`FramelessWindowHint`, `WindowTransparentForInput`) to render fully transparent widgets that float above all applications without blocking mouse clicks.
-- **Single-File Widgets**: A widget is simply a standard `.py` file containing a `MANIFEST` dictionary and a PySide6 `QWidget` class. No complex folder structures or JSON parsing required.
-- **HUD Studio (Live-Coding IDE)**: Includes a built-in WYSIWYG editor. You can code PySide6 UI components and deploy them instantly to the desktop using the **Hot-Reload** engine (`Ctrl+S`).
-- **Zero Silent Failures**: Features a strict "Dry-Run" validation system. If a widget's code contains syntax errors, the Studio intercepts it and logs the error without crashing the live desktop overlay.
+## 🚀 The "Thin Client" Architecture
 
-## 🚀 Getting Started
+Unlike traditional UI engines, **HUD does not manage, save, or read widget files from the disk**.
+It acts as a completely stateless **"Thin Client"**. 
 
-### 1. Launching the HUD Studio
-To open the live-coding environment and the invisible desktop overlay simultaneously, run:
+1. **Invisible Daemon**: The HUD runs in the background as a transparent overlay covering your entire screen.
+2. **In-Memory Injection**: External scripts (like JARVIS) connect via TCP (Port `48321`) and inject raw Python code as strings.
+3. **AST Sandbox**: Before execution, injected code is strictly validated by an Abstract Syntax Tree (AST) sandbox. It blocks dangerous operations (`open`, `exec`, `eval`) and restricts imports to safe UI modules (like `PySide6`).
+4. **Auto-Cleanup**: The engine uses persistent TCP connections. If the AI or the script that injected a widget disconnects or crashes, the HUD automatically unmounts and purges the widget from memory to keep the screen clean.
 
-```powershell
-python examples/run_studio.py
+## 📦 Installation
+
+This package is designed to be installed globally or in your virtual environment:
+
+```bash
+git clone https://github.com/Mathis13127/HUD.git
+cd HUD
+pip install -e .
 ```
 
-### 2. Creating a Widget
-In the HUD Studio, click **[+ Nouveau Widget]**. It will automatically generate the required boilerplate. A valid HUD widget looks like this:
+## 🛠️ Usage
+
+### 1. Start the Daemon
+
+The Daemon runs quietly in the Windows System Tray and opens the `127.0.0.1:48321` IPC port.
+
+```bash
+python scripts/run_daemon.py
+```
+
+### 2. Injecting an Overlay (Remote Control)
+
+Any Python script on your machine can now use the `HudDaemonClient` to dynamically spawn overlays onto the screen.
 
 ```python
-from pathlib import Path
-from PySide6.QtWidgets import QWidget, QLabel
-from hud.api.models import WidgetPlacement
+from hud.api.client import HudDaemonClient
 
-# The Manifest is defined directly in the code
+# The raw Python code of your UI widget
+WIDGET_CODE = """
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PySide6.QtCore import Qt
+
 MANIFEST = {
-    "id": "jarvis.hud.my_widget",
-    "name": "My Custom Widget",
-    "version": "1.0",
-    "default_placement": WidgetPlacement(anchor="bottom_center", offset_y=-100)
+    'id': 'api.demo.widget',
+    'name': 'API Demo',
+    'version': '1.0',
+    'default_placement': {
+        'anchor': 'center'
+    }
 }
 
 class Widget(QWidget):
     def __init__(self):
         super().__init__()
         self.setFixedSize(300, 100)
+        layout = QVBoxLayout(self)
         
-        self.lbl = QLabel("Hello Desktop!", self)
-        self.lbl.setStyleSheet("color: #00FFCC; font-size: 20px; font-weight: bold;")
+        self.lbl = QLabel('Hello from Memory!')
+        self.lbl.setStyleSheet('color: white; font-size: 20px; font-weight: bold; background: rgba(0,0,0,180); padding: 10px; border-radius: 10px;')
+        self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addWidget(self.lbl)
         
     def mount(self):
-        """Called automatically after the widget is mounted on the overlay."""
         pass
+"""
+
+client = HudDaemonClient()
+
+# 1. Compile & Inject code into Daemon's memory
+bundle_id = client.register_widget_from_code(WIDGET_CODE)
+
+# 2. Display the widget on the screen
+client.mount_widget(bundle_id)
+
+# 3. Disconnect
+# Note: Because of Auto-Cleanup, the widget will instantly disappear 
+# from the screen when this script finishes and the socket closes!
+client.close() 
 ```
 
-### 3. Loading Assets (Images, Fonts)
-Because widgets are pure Python files, you can load images natively relative to the script's location:
-```python
-img_path = Path(__file__).parent / "my_icon.png"
-my_label.setPixmap(QPixmap(str(img_path)))
+## 🔐 Security (The AST Sandbox)
+
+Because local IPC execution of Python strings is inherently risky, the engine features a strict `HudAstValidator`.
+- Only allows specific roots like `PySide6`, `typing`, `hud`.
+- Blocks Dunder introspection (`__subclasses__`) to prevent VM escapes.
+- Instantly rejects malicious payloads.
+
+## 🧪 Testing
+
+```bash
+pytest -v
 ```
-
-## 🏗️ Architecture
-
-- `hud.overlay.engine.HudOverlayWindow`: The invisible, full-screen `QWidget` host.
-- `hud.overlay.manager.HudOverlayManager`: Orchestrates mounting, unmounting, and dynamic placement.
-- `hud.bundle.loader.HudBundleLoader`: Uses `importlib` to securely hot-swap Python modules in memory.
-- `hud.studio.*`: The 3-pane PySide6 editor (Explorer, Editor, Control Panel).
-- `hud.events.bus` & `hud.hooks.registry`: Strict event and hook systems for internal lifecycle management.
-
-## 🛡️ Ecosystem Rules (AGENTS.md)
-This package strictly complies with the JARVIS industrial standards:
-- 100% Typed Errors (`WidgetLoadError`, `ManifestValidationError`). No `except: pass`.
-- 100% Isolated tests (`pytest-qt`).
-- Pure Public APIs (no cross-package leakages).
+*Built following the L1-L14 JARVIS Architectural Laws.*
